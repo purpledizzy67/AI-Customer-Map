@@ -3,13 +3,16 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { Community, MapStats } from "@/types";
 import { IntentMap } from "@/components/IntentMap";
+import { WorldMap } from "@/components/WorldMap";
 import { CommunityPanel } from "@/components/CommunityPanel";
 import { CommunityList, StatsBar } from "@/components/CommunityList";
+import { IntentExplainer } from "@/components/IntentExplainer";
 import {
   Radar,
   RefreshCw,
   Zap,
   Map,
+  Globe,
   AlertCircle,
 } from "lucide-react";
 import clsx from "clsx";
@@ -37,6 +40,7 @@ export function Dashboard() {
   const [keywords, setKeywords] = useState(DEFAULT_KEYWORDS);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [config, setConfig] = useState({ apify: false, openai: false });
+  const [mapView, setMapView] = useState<"world" | "intent">("world");
 
   const fetchCommunities = useCallback(async () => {
     const params = new URLSearchParams();
@@ -189,6 +193,8 @@ export function Dashboard() {
 
         <StatsBar stats={stats} />
 
+        <IntentExplainer />
+
         {loading ? (
           <div className="flex items-center justify-center h-96 text-slate-500">
             <RefreshCw className="w-6 h-6 animate-spin mr-2" />
@@ -214,19 +220,60 @@ export function Dashboard() {
             {/* Map */}
             <div className="lg:col-span-6 glass rounded-xl overflow-hidden flex flex-col">
               <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 text-sm text-slate-400">
-                <Map className="w-4 h-4" />
-                Intent Landscape
+                {mapView === "world" ? (
+                  <Globe className="w-4 h-4" />
+                ) : (
+                  <Map className="w-4 h-4" />
+                )}
+                <span>{mapView === "world" ? "World Map" : "Intent Landscape"}</span>
+
+                <div className="ml-3 flex rounded-lg border border-white/10 overflow-hidden text-xs">
+                  <button
+                    onClick={() => setMapView("world")}
+                    className={clsx(
+                      "px-3 py-1 flex items-center gap-1 transition",
+                      mapView === "world"
+                        ? "bg-accent-intent/20 text-accent-intent"
+                        : "text-slate-500 hover:text-slate-300"
+                    )}
+                  >
+                    <Globe className="w-3 h-3" />
+                    World
+                  </button>
+                  <button
+                    onClick={() => setMapView("intent")}
+                    className={clsx(
+                      "px-3 py-1 flex items-center gap-1 transition",
+                      mapView === "intent"
+                        ? "bg-accent-intent/20 text-accent-intent"
+                        : "text-slate-500 hover:text-slate-300"
+                    )}
+                  >
+                    <Map className="w-3 h-3" />
+                    Intent
+                  </button>
+                </div>
+
                 <span className="text-xs text-slate-600 ml-auto flex items-center gap-1">
                   <Zap className="w-3 h-3" />
-                  {filteredForMap.length} communities plotted
+                  {filteredForMap.length} communities
+                  {mapView === "world" && " · click pin to open"}
                 </span>
               </div>
               <div className="flex-1 p-2">
-                <IntentMap
-                  communities={filteredForMap}
-                  selectedId={selected?.id}
-                  onSelect={setSelected}
-                />
+                {mapView === "world" ? (
+                  <WorldMap
+                    communities={filteredForMap}
+                    selectedId={selected?.id}
+                    onSelect={setSelected}
+                  />
+                ) : (
+                  <IntentMap
+                    communities={filteredForMap}
+                    selectedId={selected?.id}
+                    onSelect={setSelected}
+                  />
+                )}
               </div>
             </div>
 
