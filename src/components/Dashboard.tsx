@@ -41,6 +41,7 @@ export function Dashboard() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [config, setConfig] = useState({ apify: false, openai: false });
   const [mapView, setMapView] = useState<"world" | "intent">("world");
+  const [error, setError] = useState<string | null>(null);
 
   const fetchCommunities = useCallback(async () => {
     const params = new URLSearchParams();
@@ -49,37 +50,74 @@ export function Dashboard() {
     if (search) params.set("search", search);
 
     const res = await fetch(`/api/communities?${params}`);
+    if (!res.ok) {
+      throw new Error(`Failed to load communities (${res.status})`);
+    }
     const data = await res.json();
-    setCommunities(data.communities);
-    setStats(data.stats);
-    return data.communities as Community[];
+    setCommunities(data.communities ?? []);
+    if (data.stats) setStats(data.stats);
+    setError(null);
+    return (data.communities ?? []) as Community[];
   }, [platformFilter, tierFilter, search]);
 
-  const init = useCallback(async () => {
-    setLoading(true);
-    try {
-      const existing = await fetchCommunities();
-      const statsRes = await fetch("/api/stats");
-      const statsData = await statsRes.json();
-      setConfig(statsData.config);
+  // One-time bootstrap on mount
+  useEffect(() => {
+    let cancelled = false;
 
-      if (existing.length === 0) {
-        await fetch("/api/seed", { method: "POST" });
-        await fetchCommunities();
+    async function bootstrap() {
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        const res = await fetch(`/api/communities?${params}`);
+        if (!res.ok) throw new Error(`API error ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+
+        let list = (data.communities ?? []) as Community[];
+        setCommunities(list);
+        if (data.stats) setStats(data.stats);
+
+        const statsRes = await fetch("/api/stats");
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          if (!cancelled) setConfig(statsData.config ?? { apify: false, openai: false });
+        }
+
+        if (list.length === 0) {
+          await fetch("/api/seed", { method: "POST" });
+          const retry = await fetch(`/api/communities?${params}`);
+          if (retry.ok) {
+            const retryData = await retry.json();
+            if (!cancelled) {
+              list = retryData.communities ?? [];
+              setCommunities(list);
+              if (retryData.stats) setStats(retryData.stats);
+            }
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load dashboard");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } finally {
-      setLoading(false);
     }
-  }, [fetchCommunities]);
 
-  useEffect(() => {
-    init();
-  }, [init]);
+    bootstrap();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Refetch when filters change (without full-page loading state)
   useEffect(() => {
-    if (!loading) {
-      fetchCommunities();
-    }
+    if (loading) return;
+    fetchCommunities().catch((err) => {
+      setError(err instanceof Error ? err.message : "Failed to refresh");
+    });
   }, [platformFilter, tierFilter, search, loading, fetchCommunities]);
 
   const handleScrape = async () => {
@@ -180,6 +218,21 @@ export function Dashboard() {
       </header>
 
       <main className="max-w-[1600px] mx-auto px-4 py-4 space-y-4">
+        {error && (
+          <div className="glass rounded-lg px-4 py-3 flex items-start gap-2 text-sm text-red-300/90">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p>{error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-2 text-xs underline text-red-200 hover:text-white"
+              >
+                Reload page
+              </button>
+            </div>
+          </div>
+        )}
+
         {warnings.length > 0 && (
           <div className="glass rounded-lg px-4 py-3 flex items-start gap-2 text-sm text-amber-300/90">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />

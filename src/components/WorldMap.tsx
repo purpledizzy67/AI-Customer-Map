@@ -21,8 +21,7 @@ const TIER_COLORS: Record<string, string> = {
   cold: "#64748b",
 };
 
-const WORLD_ATLAS_URL =
-  "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+const WORLD_ATLAS_URL = "/geo/countries-110m.json";
 
 function pinRadius(memberCount: number, intentScore: number): number {
   const base = 4 + Math.sqrt(Math.max(memberCount, 1)) / 80;
@@ -41,6 +40,7 @@ export function WorldMap({ communities, selectedId, onSelect }: WorldMapProps) {
     pin: GeoPin;
   } | null>(null);
   const [worldLoaded, setWorldLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const geoDataRef = useRef<GeoJSON.FeatureCollection | null>(null);
 
   useEffect(() => {
@@ -56,15 +56,24 @@ export function WorldMap({ communities, selectedId, onSelect }: WorldMapProps) {
 
   useEffect(() => {
     let cancelled = false;
-    d3.json(WORLD_ATLAS_URL).then((topology) => {
-      if (cancelled || !topology) return;
-      const world = topology as Topology<{ countries: GeometryCollection }>;
-      geoDataRef.current = feature(
-        world,
-        world.objects.countries
-      ) as GeoJSON.FeatureCollection;
-      setWorldLoaded(true);
-    });
+    setLoadError(null);
+
+    d3.json(WORLD_ATLAS_URL)
+      .then((topology) => {
+        if (cancelled || !topology) return;
+        const world = topology as Topology<{ countries: GeometryCollection }>;
+        geoDataRef.current = feature(
+          world,
+          world.objects.countries
+        ) as GeoJSON.FeatureCollection;
+        setWorldLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoadError("Could not load map data. Try switching to Intent view.");
+        }
+      });
+
     return () => {
       cancelled = true;
     };
@@ -214,9 +223,14 @@ export function WorldMap({ communities, selectedId, onSelect }: WorldMapProps) {
   return (
     <div ref={containerRef} className="relative w-full h-full min-h-[400px]">
       <svg ref={svgRef} className="w-full h-full rounded-lg" />
-      {!worldLoaded && (
+      {!worldLoaded && !loadError && (
         <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm">
           Loading world map...
+        </div>
+      )}
+      {loadError && (
+        <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm px-6 text-center">
+          {loadError}
         </div>
       )}
       <button
