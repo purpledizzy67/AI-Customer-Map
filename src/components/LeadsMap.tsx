@@ -142,7 +142,7 @@ export function LeadsMap({
       const enriched = enrichedLeads.find((e) => e.community.id === c.id);
       return enriched ?? { community: c };
     });
-    downloadCsv(leads, `intentmap-${communities.length}-leads.csv`);
+    downloadCsv(leads, `ai-customer-map-${communities.length}-leads.csv`);
   }, [communities, enrichedLeads]);
 
   if (!mounted) {

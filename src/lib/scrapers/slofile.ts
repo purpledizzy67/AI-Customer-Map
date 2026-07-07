@@ -7,7 +7,7 @@ import {
 } from "@/lib/intent-analyzer";
 
 const USER_AGENT =
-  "Mozilla/5.0 (compatible; IntentMap/1.0; +https://github.com/intentmap)";
+  "Mozilla/5.0 (compatible; AI-Customer-Map/1.0; +https://github.com/purpledizzy67/AI-Customer-Map)";
 
 export interface SlofileScrapeOptions {
   keyword?: string;

@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IntentMap — Live Customer Intent from Discord & Slack",
+  title: "AI Customer Map — Live Customer Intent from Discord & Slack",
   description:
-    "Discover public Discord and Slack communities with high buying intent. Map, score, and reach potential customers faster.",
+    "AI Customer Map discovers public Discord and Slack communities with high buying intent. Map, score, and reach potential customers faster.",
 };
 
 export default function RootLayout({

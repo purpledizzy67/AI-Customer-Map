@@ -72,7 +72,7 @@ export function leadsToCsv(leads: EnrichedLead[]): string {
   );
 }
 
-export function downloadCsv(leads: EnrichedLead[], filename = "intentmap-leads.csv") {
+export function downloadCsv(leads: EnrichedLead[], filename = "ai-customer-map-leads.csv") {
   const csv = leadsToCsv(leads);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);

@@ -1,8 +1,8 @@
-# IntentMap
+# AI Customer Map
 
 Turn public Discord and Slack communities into a **live map of customer buying intent** — discover and reach potential customers faster.
 
-![IntentMap](https://img.shields.io/badge/platforms-Discord%20%7C%20Slack-5865F2)
+![AI Customer Map](https://img.shields.io/badge/platforms-Discord%20%7C%20Slack-5865F2)
 
 ## What it does
 
@@ -66,7 +66,7 @@ Tiers: **Hot** (70+), **Warm** (45+), **Cool** (25+), **Cold** (&lt;25)
 ```
 src/
 ├── app/api/          # REST API routes
-├── components/       # Dashboard, IntentMap (D3), CommunityPanel
+├── components/       # Dashboard, intent landscape map (D3), CommunityPanel
 ├── lib/
 │   ├── scrapers/     # Slofile (direct), Disboard (Apify/seed)
 │   ├── intent-analyzer.ts
