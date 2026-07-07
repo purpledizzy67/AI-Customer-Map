@@ -33,6 +33,7 @@ function ensureDb(): Database.Database {
       region TEXT,
       language TEXT,
       invite_url TEXT,
+      website_url TEXT,
       source_url TEXT NOT NULL,
       intent_score REAL NOT NULL DEFAULT 0,
       intent_tier TEXT NOT NULL DEFAULT 'cold',
@@ -59,6 +60,14 @@ function ensureDb(): Database.Database {
     );
   `);
 
+  // Migrate existing databases
+  const cols = db
+    .prepare("PRAGMA table_info(communities)")
+    .all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "website_url")) {
+    db.exec("ALTER TABLE communities ADD COLUMN website_url TEXT");
+  }
+
   return db;
 }
 
@@ -75,6 +84,7 @@ function rowToCommunity(row: Record<string, unknown>): Community {
     region: row.region as string | undefined,
     language: row.language as string | undefined,
     inviteUrl: row.invite_url as string | undefined,
+    websiteUrl: row.website_url as string | undefined,
     sourceUrl: row.source_url as string,
     intentScore: row.intent_score as number,
     intentTier: row.intent_tier as Community["intentTier"],
@@ -99,6 +109,7 @@ function communityToParams(community: Community) {
     region: community.region ?? null,
     language: community.language ?? null,
     inviteUrl: community.inviteUrl ?? null,
+    websiteUrl: community.websiteUrl ?? null,
     sourceUrl: community.sourceUrl,
     intentScore: community.intentScore,
     intentTier: community.intentTier,
@@ -116,12 +127,12 @@ export function upsertCommunity(community: Community): void {
     .prepare(
       `INSERT INTO communities (
         id, platform, name, description, member_count, online_count,
-        category, tags, region, language, invite_url, source_url,
+        category, tags, region, language, invite_url, website_url, source_url,
         intent_score, intent_tier, intent_signals, map_x, map_y,
         scraped_at, analyzed_at
       ) VALUES (
         @id, @platform, @name, @description, @memberCount, @onlineCount,
-        @category, @tags, @region, @language, @inviteUrl, @sourceUrl,
+        @category, @tags, @region, @language, @inviteUrl, @websiteUrl, @sourceUrl,
         @intentScore, @intentTier, @intentSignals, @mapX, @mapY,
         @scrapedAt, @analyzedAt
       )
@@ -135,6 +146,7 @@ export function upsertCommunity(community: Community): void {
         region = excluded.region,
         language = excluded.language,
         invite_url = excluded.invite_url,
+        website_url = excluded.website_url,
         source_url = excluded.source_url,
         intent_score = excluded.intent_score,
         intent_tier = excluded.intent_tier,
@@ -152,12 +164,12 @@ export function upsertCommunities(communities: Community[]): number {
   const stmt = database.prepare(
     `INSERT INTO communities (
       id, platform, name, description, member_count, online_count,
-      category, tags, region, language, invite_url, source_url,
+      category, tags, region, language, invite_url, website_url, source_url,
       intent_score, intent_tier, intent_signals, map_x, map_y,
       scraped_at, analyzed_at
     ) VALUES (
       @id, @platform, @name, @description, @memberCount, @onlineCount,
-      @category, @tags, @region, @language, @inviteUrl, @sourceUrl,
+      @category, @tags, @region, @language, @inviteUrl, @websiteUrl, @sourceUrl,
       @intentScore, @intentTier, @intentSignals, @mapX, @mapY,
       @scrapedAt, @analyzedAt
     )
@@ -171,6 +183,7 @@ export function upsertCommunities(communities: Community[]): number {
       region = excluded.region,
       language = excluded.language,
       invite_url = excluded.invite_url,
+      website_url = excluded.website_url,
       source_url = excluded.source_url,
       intent_score = excluded.intent_score,
       intent_tier = excluded.intent_tier,

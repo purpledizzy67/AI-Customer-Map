@@ -39,7 +39,7 @@ export function Dashboard() {
   const [scraping, setScraping] = useState(false);
   const [keywords, setKeywords] = useState(DEFAULT_KEYWORDS);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [config, setConfig] = useState({ apify: false, openai: false });
+  const [config, setConfig] = useState({ apify: false, openai: false, apollo: false });
   const [mapView, setMapView] = useState<"world" | "intent">("world");
   const [error, setError] = useState<string | null>(null);
 
@@ -81,7 +81,7 @@ export function Dashboard() {
         const statsRes = await fetch("/api/stats");
         if (statsRes.ok) {
           const statsData = await statsRes.json();
-          if (!cancelled) setConfig(statsData.config ?? { apify: false, openai: false });
+          if (!cancelled) setConfig(statsData.config ?? { apify: false, openai: false, apollo: false });
         }
 
         if (list.length === 0) {
@@ -201,6 +201,11 @@ export function Dashboard() {
             {config.apify && (
               <span className="px-2 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/20">
                 Apify
+              </span>
+            )}
+            {config.apollo && (
+              <span className="px-2 py-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                Apollo
               </span>
             )}
             {config.openai && (
@@ -335,6 +340,7 @@ export function Dashboard() {
               <CommunityPanel
                 community={selected}
                 onClose={() => setSelected(null)}
+                apolloConfigured={config.apollo}
               />
             </div>
           </div>

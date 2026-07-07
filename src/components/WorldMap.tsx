@@ -6,6 +6,7 @@ import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
 import type { Community } from "@/types";
 import { communitiesToGeoPins, type GeoPin } from "@/lib/geo";
+import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import clsx from "clsx";
 
 interface WorldMapProps {
@@ -220,6 +221,15 @@ export function WorldMap({ communities, selectedId, onSelect }: WorldMapProps) {
     }
   };
 
+  const zoomBy = (factor: number) => {
+    if (svgRef.current && zoomRef.current) {
+      d3.select(svgRef.current)
+        .transition()
+        .duration(250)
+        .call(zoomRef.current.scaleBy, factor);
+    }
+  };
+
   return (
     <div ref={containerRef} className="relative w-full h-full min-h-[400px]">
       <svg ref={svgRef} className="w-full h-full rounded-lg" />
@@ -233,12 +243,32 @@ export function WorldMap({ communities, selectedId, onSelect }: WorldMapProps) {
           {loadError}
         </div>
       )}
-      <button
-        onClick={resetZoom}
-        className="absolute bottom-3 right-3 text-xs px-2.5 py-1.5 rounded-md glass text-slate-400 hover:text-white transition"
-      >
-        Reset view
-      </button>
+      <div className="absolute bottom-3 right-3 flex flex-col gap-1">
+        <button
+          onClick={() => zoomBy(1.4)}
+          className="p-2 rounded-md glass text-slate-400 hover:text-white transition"
+          aria-label="Zoom in"
+          title="Zoom in"
+        >
+          <ZoomIn className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => zoomBy(1 / 1.4)}
+          className="p-2 rounded-md glass text-slate-400 hover:text-white transition"
+          aria-label="Zoom out"
+          title="Zoom out"
+        >
+          <ZoomOut className="w-4 h-4" />
+        </button>
+        <button
+          onClick={resetZoom}
+          className="p-2 rounded-md glass text-slate-400 hover:text-white transition"
+          aria-label="Reset view"
+          title="Reset view"
+        >
+          <Maximize2 className="w-4 h-4" />
+        </button>
+      </div>
       {tooltip && (
         <div
           className="absolute z-20 pointer-events-none glass rounded-lg px-3 py-2 text-sm shadow-xl max-w-xs"

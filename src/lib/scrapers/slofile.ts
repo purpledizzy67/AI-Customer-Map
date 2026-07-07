@@ -76,6 +76,7 @@ async function fetchTeamDetails(slug: string): Promise<{
   region?: string;
   language?: string;
   inviteUrl?: string;
+  websiteUrl?: string;
   memberCount?: number;
 }> {
   const html = await fetchPage(`https://slofile.com/slack/${slug}`);
@@ -95,10 +96,24 @@ async function fetchTeamDetails(slug: string): Promise<{
     $('a[href*=".slack.com"]').first().attr("href") ||
     undefined;
 
+  let websiteUrl: string | undefined;
+  $('.links a[href^="http"]').each((_, el) => {
+    const href = $(el).attr("href") ?? "";
+    if (
+      href &&
+      !href.includes("slofile.com") &&
+      !href.includes("slack.com") &&
+      !href.includes("twitter.com") &&
+      !href.includes("linkedin.com")
+    ) {
+      websiteUrl = href;
+    }
+  });
+
   const memberTitle = $('.counts .count[title*="members"]').attr("title");
   const memberCount = memberTitle ? parseMemberCount(memberTitle) : undefined;
 
-  return { description, tags, region, language, inviteUrl, memberCount };
+  return { description, tags, region, language, inviteUrl, websiteUrl, memberCount };
 }
 
 export async function scrapeSlofile(
@@ -148,6 +163,7 @@ export async function scrapeSlofile(
       region: undefined as string | undefined,
       language: undefined as string | undefined,
       inviteUrl: undefined as string | undefined,
+      websiteUrl: undefined as string | undefined,
       memberCount: card.memberCount,
     };
 
@@ -160,6 +176,7 @@ export async function scrapeSlofile(
           region: enriched.region,
           language: enriched.language,
           inviteUrl: enriched.inviteUrl,
+          websiteUrl: enriched.websiteUrl,
           memberCount: enriched.memberCount ?? card.memberCount,
         };
       } catch {
@@ -192,6 +209,7 @@ export async function scrapeSlofile(
       region: details.region,
       language: details.language,
       inviteUrl: details.inviteUrl,
+      websiteUrl: details.websiteUrl,
       sourceUrl: card.sourceUrl,
       intentScore: intent.score,
       intentTier: intent.tier,

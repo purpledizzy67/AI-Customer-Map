@@ -20,6 +20,7 @@ export interface Community {
   region?: string;
   language?: string;
   inviteUrl?: string;
+  websiteUrl?: string;
   sourceUrl: string;
   intentScore: number;
   intentTier: IntentTier;
