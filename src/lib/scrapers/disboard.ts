@@ -159,10 +159,13 @@ export async function scrapeDisboard(
         keywords: options.keywords,
         maxPerKeyword: Math.ceil(maxResults / 3),
       });
-      return {
-        communities: communities.slice(0, maxResults),
-        source: "apify",
-      };
+      if (communities.length > 0) {
+        return {
+          communities: communities.slice(0, maxResults),
+          source: "apify",
+        };
+      }
+      console.warn("Apify returned 0 Discord communities, using seed fallback");
     } catch (err) {
       console.error("Apify Disboard scrape failed, falling back to seed:", err);
     }

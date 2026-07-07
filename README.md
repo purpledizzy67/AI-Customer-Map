@@ -38,7 +38,7 @@ Disboard.org is behind Cloudflare, so direct scraping doesn't work. Add your Api
 APIFY_API_KEY=apify_api_xxxxxxxx
 ```
 
-The platform uses the `khadinakbar/discord-all-in-one-scraper` actor to search Disboard by keyword and enrich server profiles.
+The platform uses the [`magicfingers/discord-server-scraper`](https://apify.com/magicfingers/discord-server-scraper) actor with Apify Proxy to search Disboard by keyword.
 
 ## API
 

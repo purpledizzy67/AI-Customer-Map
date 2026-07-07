@@ -6,6 +6,7 @@ import {
 } from "@/lib/intent-analyzer";
 
 const APIFY_BASE = "https://api.apify.com/v2";
+const DEFAULT_ACTOR = "magicfingers/discord-server-scraper";
 
 export interface ApifyScrapeOptions {
   keywords?: string[];
@@ -22,28 +23,29 @@ interface ApifyDatasetItem {
   serverName?: string;
   title?: string;
   description?: string;
-  memberCount?: number;
-  members?: number;
-  onlineCount?: number;
-  online?: number;
+  memberCount?: number | null;
+  members?: number | null;
+  onlineCount?: number | null;
+  online?: number | null;
   tags?: string[];
   tag?: string;
-  category?: string;
+  category?: string | null;
   inviteUrl?: string;
   invite?: string;
+  inviteCode?: string;
   url?: string;
   sourceUrl?: string;
   link?: string;
-  id?: string;
-  platform?: string;
+  id?: string | null;
+  source?: string;
+  _diagnostic?: boolean;
+  error?: string;
 }
-
-const DEFAULT_ACTOR = "khadinakbar/discord-all-in-one-scraper";
 
 async function waitForRun(
   token: string,
   runId: string,
-  maxWaitMs = 120000
+  maxWaitMs = 300000
 ): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
@@ -56,7 +58,7 @@ async function waitForRun(
     if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
       throw new Error(`Apify run ${status}`);
     }
-    await new Promise((r) => setTimeout(r, 3000));
+    await new Promise((r) => setTimeout(r, 4000));
   }
   throw new Error("Apify run timed out");
 }
@@ -69,36 +71,71 @@ async function fetchDataset(
     `${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&format=json`
   );
   if (!res.ok) throw new Error(`Apify dataset fetch failed: ${res.status}`);
-  return res.json() as Promise<ApifyDatasetItem[]>;
+  const items = (await res.json()) as ApifyDatasetItem[];
+  return items.filter((item) => !item._diagnostic && item.name);
 }
 
 function normalizeApifyItem(
   item: ApifyDatasetItem,
   index: number
-): Omit<Community, "intentScore" | "intentTier" | "intentSignals" | "mapX" | "mapY" | "analyzedAt"> | null {
+): Omit<
+  Community,
+  "intentScore" | "intentTier" | "intentSignals" | "mapX" | "mapY" | "analyzedAt"
+> | null {
   const name = item.name ?? item.serverName ?? item.title;
   if (!name) return null;
 
   const sourceUrl =
-    item.sourceUrl ?? item.url ?? item.link ?? `https://disboard.org/server/${item.id ?? index}`;
+    item.sourceUrl ??
+    item.url ??
+    item.link ??
+    `https://disboard.org/server/${item.id ?? index}`;
   const description = item.description ?? "";
   const memberCount = item.memberCount ?? item.members ?? 0;
-  const tags = item.tags ?? (item.tag ? [item.tag] : []);
-  const inviteUrl = item.inviteUrl ?? item.invite;
+  const rawTags = item.tags ?? (item.tag ? [item.tag] : []);
+  const tags = [...new Set(rawTags.filter(Boolean))].slice(0, 12);
+  const inviteUrl =
+    item.inviteUrl ??
+    item.invite ??
+    (item.inviteCode ? `https://discord.gg/${item.inviteCode}` : undefined);
 
   return {
-    id: generateCommunityId("discord", sourceUrl),
+    id: generateCommunityId("discord", sourceUrl + name),
     platform: "discord",
     name,
     description,
-    memberCount,
-    onlineCount: item.onlineCount ?? item.online,
+    memberCount: memberCount ?? 0,
+    onlineCount: item.onlineCount ?? item.online ?? undefined,
     category: item.category ?? tags[0],
     tags,
     inviteUrl,
     sourceUrl,
     scrapedAt: new Date().toISOString(),
   };
+}
+
+async function runActor(
+  token: string,
+  actorId: string,
+  input: Record<string, unknown>
+): Promise<ApifyDatasetItem[]> {
+  const runRes = await fetch(
+    `${APIFY_BASE}/acts/${actorId.replace("/", "~")}/runs?token=${token}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }
+  );
+
+  if (!runRes.ok) {
+    const errText = await runRes.text();
+    throw new Error(`Apify run failed: ${errText}`);
+  }
+
+  const runJson = (await runRes.json()) as ApifyRunResponse;
+  const datasetId = await waitForRun(token, runJson.data.id);
+  return fetchDataset(token, datasetId);
 }
 
 export async function scrapeDisboardViaApify(
@@ -118,37 +155,23 @@ export async function scrapeDisboardViaApify(
       "startup",
       "marketing",
     ]);
-  const maxPerKeyword = options.maxPerKeyword ?? 30;
+  const maxPerKeyword = options.maxPerKeyword ?? 20;
   const actorId = options.actorId ?? DEFAULT_ACTOR;
 
   const allItems: ApifyDatasetItem[] = [];
 
-  for (const keyword of keywords) {
-    const input = {
-      mode: "search",
-      searchQuery: keyword,
-      maxResults: maxPerKeyword,
-    };
+  // Run one Apify job with comma-separated keywords (actor handles pagination)
+  const items = await runActor(token, actorId, {
+    mode: "disboard",
+    searchKeywords: keywords.join(","),
+    maxResults: maxPerKeyword * keywords.length,
+    maxPages: 3,
+    proxyConfiguration: { useApifyProxy: true },
+  });
+  allItems.push(...items);
 
-    const runRes = await fetch(
-      `${APIFY_BASE}/acts/${actorId.replace("/", "~")}/runs?token=${token}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      }
-    );
-
-    if (!runRes.ok) {
-      const errText = await runRes.text();
-      console.error(`Apify run failed for keyword "${keyword}":`, errText);
-      continue;
-    }
-
-    const runJson = (await runRes.json()) as ApifyRunResponse;
-    const datasetId = await waitForRun(token, runJson.data.id);
-    const items = await fetchDataset(token, datasetId);
-    allItems.push(...items);
+  if (allItems.length === 0) {
+    console.warn("Apify disboard scrape returned no communities");
   }
 
   const seen = new Set<string>();
