@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { Community } from "@/types";
 import type { ApolloEnrichmentResult } from "@/lib/apollo";
+import type { EnrichedLead } from "@/lib/export-leads";
 import clsx from "clsx";
 import {
   ExternalLink,
@@ -20,6 +21,7 @@ interface CommunityPanelProps {
   community: Community | null;
   onClose: () => void;
   apolloConfigured?: boolean;
+  prefilledEnrichment?: EnrichedLead;
 }
 
 function tierLabel(tier: string): string {
@@ -43,6 +45,7 @@ export function CommunityPanel({
   community,
   onClose,
   apolloConfigured = false,
+  prefilledEnrichment,
 }: CommunityPanelProps) {
   const [enrichment, setEnrichment] = useState<ApolloEnrichmentResult | null>(null);
   const [enriching, setEnriching] = useState(false);
@@ -53,7 +56,15 @@ export function CommunityPanel({
     setEnrichment(null);
     setEnrichError(null);
     setManualDomain("");
-  }, [community?.id]);
+    if (prefilledEnrichment?.organization && community) {
+      setEnrichment({
+        communityId: community.id,
+        domains: prefilledEnrichment.domain ? [prefilledEnrichment.domain] : [],
+        organizations: [prefilledEnrichment.organization],
+        enrichedAt: new Date().toISOString(),
+      });
+    }
+  }, [community?.id, prefilledEnrichment]);
 
   const handleEnrich = async (domain?: string) => {
     if (!community) return;

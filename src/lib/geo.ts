@@ -27,6 +27,19 @@ const REGION_COORDS: Record<string, [number, number]> = {
   brazil: [-52, -10],
   nigeria: [8, 10],
   singapore: [104, 1],
+  miami: [-80.19, 25.76],
+  brickell: [-80.19, 25.76],
+  "new york": [-74.01, 40.71],
+  "san francisco": [-122.42, 37.77],
+  london: [-0.12, 51.5],
+  berlin: [13.4, 52.52],
+  tokyo: [139.69, 35.68],
+  sydney: [151.21, -33.87],
+  toronto: [-79.38, 43.65],
+  austin: [-97.74, 30.27],
+  seattle: [-122.33, 47.61],
+  chicago: [-87.63, 41.88],
+  "los angeles": [-118.24, 34.05],
 };
 
 const LANGUAGE_COORDS: Record<string, [number, number]> = {
@@ -75,6 +88,14 @@ function lookupRegion(region?: string): [number, number] | null {
   return null;
 }
 
+function lookupCityInText(text: string): [number, number] | null {
+  const lower = text.toLowerCase();
+  for (const [name, coords] of Object.entries(REGION_COORDS)) {
+    if (name.length > 3 && lower.includes(name)) return coords;
+  }
+  return null;
+}
+
 function lookupLanguage(language?: string): [number, number] | null {
   if (!language) return null;
   const key = normalizeKey(language);
@@ -104,13 +125,17 @@ export interface GeoPin {
 }
 
 export function getCommunityCoordinates(community: Community): GeoPin {
+  const textBlob = [community.region, community.name, community.description, community.language, ...community.tags].join(" ");
+
   const base =
+    lookupCityInText(textBlob) ??
     lookupRegion(community.region) ??
     lookupLanguage(community.language) ??
     inferFromTags(community) ??
     REGION_COORDS.worldwide;
 
-  const [jx, jy] = jitterFromId(community.id);
+  const spread = community.region || lookupCityInText(textBlob) ? 4 : 12;
+  const [jx, jy] = jitterFromId(community.id, spread);
   const coordinates: [number, number] = [base[0] + jx, base[1] + jy];
 
   const regionLabel =

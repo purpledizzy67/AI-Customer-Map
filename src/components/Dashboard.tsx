@@ -1,21 +1,37 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { Community, MapStats } from "@/types";
+import type { EnrichedLead } from "@/lib/export-leads";
+import { filterLeads } from "@/lib/export-leads";
 import { IntentMap } from "@/components/IntentMap";
-import { WorldMap } from "@/components/WorldMap";
 import { CommunityPanel } from "@/components/CommunityPanel";
 import { CommunityList, StatsBar } from "@/components/CommunityList";
 import { IntentExplainer } from "@/components/IntentExplainer";
 import {
   Radar,
   RefreshCw,
-  Zap,
   Map,
   Globe,
   AlertCircle,
+  MapPin,
 } from "lucide-react";
 import clsx from "clsx";
+
+const LeadsMap = dynamic(
+  () => import("@/components/LeadsMap").then((m) => ({ default: m.LeadsMap })),
+  { ssr: false, loading: () => (
+    <div className="w-full h-full min-h-[500px] bg-[#e8e4df] flex items-center justify-center text-slate-500">
+      Loading map...
+    </div>
+  )}
+);
+
+const WorldMap = dynamic(
+  () => import("@/components/WorldMap").then((m) => ({ default: m.WorldMap })),
+  { ssr: false }
+);
 
 const DEFAULT_KEYWORDS = "saas,startup,marketing,seo,product";
 
@@ -35,13 +51,18 @@ export function Dashboard() {
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState("all");
   const [tierFilter, setTierFilter] = useState("all");
+  const [regionFilter, setRegionFilter] = useState("");
+  const [minIntent, setMinIntent] = useState("any");
+  const [maxIntent, setMaxIntent] = useState("any");
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
+  const [bulkEnriching, setBulkEnriching] = useState(false);
   const [keywords, setKeywords] = useState(DEFAULT_KEYWORDS);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [config, setConfig] = useState({ apify: false, openai: false, apollo: false });
-  const [mapView, setMapView] = useState<"world" | "intent">("world");
+  const [mapView, setMapView] = useState<"leads" | "world" | "intent">("leads");
   const [error, setError] = useState<string | null>(null);
+  const [enrichedLeads, setEnrichedLeads] = useState<EnrichedLead[]>([]);
 
   const fetchCommunities = useCallback(async () => {
     const params = new URLSearchParams();
@@ -50,9 +71,7 @@ export function Dashboard() {
     if (search) params.set("search", search);
 
     const res = await fetch(`/api/communities?${params}`);
-    if (!res.ok) {
-      throw new Error(`Failed to load communities (${res.status})`);
-    }
+    if (!res.ok) throw new Error(`Failed to load communities (${res.status})`);
     const data = await res.json();
     setCommunities(data.communities ?? []);
     if (data.stats) setStats(data.stats);
@@ -60,59 +79,45 @@ export function Dashboard() {
     return (data.communities ?? []) as Community[];
   }, [platformFilter, tierFilter, search]);
 
-  // One-time bootstrap on mount
   useEffect(() => {
     let cancelled = false;
-
     async function bootstrap() {
       setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams();
-        const res = await fetch(`/api/communities?${params}`);
+        const res = await fetch("/api/communities");
         if (!res.ok) throw new Error(`API error ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
-
         let list = (data.communities ?? []) as Community[];
         setCommunities(list);
         if (data.stats) setStats(data.stats);
-
         const statsRes = await fetch("/api/stats");
         if (statsRes.ok) {
           const statsData = await statsRes.json();
           if (!cancelled) setConfig(statsData.config ?? { apify: false, openai: false, apollo: false });
         }
-
         if (list.length === 0) {
           await fetch("/api/seed", { method: "POST" });
-          const retry = await fetch(`/api/communities?${params}`);
+          const retry = await fetch("/api/communities");
           if (retry.ok) {
             const retryData = await retry.json();
             if (!cancelled) {
-              list = retryData.communities ?? [];
-              setCommunities(list);
+              setCommunities(retryData.communities ?? []);
               if (retryData.stats) setStats(retryData.stats);
             }
           }
         }
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load dashboard");
-        }
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
-
     bootstrap();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { cancelled = true; };
   }, []);
 
-  // Refetch when filters change (without full-page loading state)
   useEffect(() => {
     if (loading) return;
     fetchCommunities().catch((err) => {
@@ -120,15 +125,29 @@ export function Dashboard() {
     });
   }, [platformFilter, tierFilter, search, loading, fetchCommunities]);
 
+  const mapFiltered = useMemo(
+    () =>
+      filterLeads(communities, {
+        region: regionFilter,
+        minIntent,
+        maxIntent,
+        platform: platformFilter,
+        tier: tierFilter,
+        search,
+      }),
+    [communities, regionFilter, minIntent, maxIntent, platformFilter, tierFilter, search]
+  );
+
+  const selectedEnrichment = useMemo(
+    () => enrichedLeads.find((e) => e.community.id === selected?.id),
+    [enrichedLeads, selected?.id]
+  );
+
   const handleScrape = async () => {
     setScraping(true);
     setWarnings([]);
     try {
-      const keywordList = keywords
-        .split(",")
-        .map((k) => k.trim())
-        .filter(Boolean);
-
+      const keywordList = keywords.split(",").map((k) => k.trim()).filter(Boolean);
       const res = await fetch("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -138,40 +157,68 @@ export function Dashboard() {
           maxPerSource: 30,
         }),
       });
-
       const data = await res.json();
       if (data.warnings?.length) setWarnings(data.warnings);
       await fetchCommunities();
     } catch (err) {
-      setWarnings([
-        err instanceof Error ? err.message : "Scrape failed",
-      ]);
+      setWarnings([err instanceof Error ? err.message : "Scrape failed"]);
     } finally {
       setScraping(false);
     }
   };
 
-  const filteredForMap = useMemo(() => communities, [communities]);
+  const handleBulkEnrich = async () => {
+    setBulkEnriching(true);
+    try {
+      const res = await fetch("/api/enrich/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          communityIds: mapFiltered.map((c) => c.id),
+          limit: 30,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error ?? "Bulk enrich failed");
+
+      const leads: EnrichedLead[] = data.results.map(
+        (r: {
+          community: Community;
+          enrichment: { organizations: EnrichedLead["organization"][]; domains: string[] };
+        }) => ({
+          community: r.community,
+          organization: r.enrichment.organizations?.[0],
+          domain: r.enrichment.domains?.[0],
+        })
+      );
+      setEnrichedLeads((prev) => {
+        const byId = new globalThis.Map(prev.map((l) => [l.community.id, l]));
+        for (const lead of leads) byId.set(lead.community.id, lead);
+        return [...byId.values()];
+      });
+      setWarnings([
+        `Apollo enriched ${data.enriched} leads. Export CSV to use with Apollo extension on LinkedIn URLs.`,
+      ]);
+    } catch (err) {
+      setWarnings([err instanceof Error ? err.message : "Bulk enrich failed"]);
+    } finally {
+      setBulkEnriching(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#0a0e14]">
-      {/* Header */}
       <header className="border-b border-white/10 bg-surface/50 backdrop-blur-md sticky top-0 z-30">
-        <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center justify-between gap-4">
+        <div className="max-w-[1800px] mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-accent-intent to-accent-discord flex items-center justify-center">
               <Radar className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white leading-tight">
-                IntentMap
-              </h1>
-              <p className="text-xs text-slate-500">
-                Live buying intent from Discord & Slack
-              </p>
+              <h1 className="text-lg font-bold text-white leading-tight">IntentMap</h1>
+              <p className="text-xs text-slate-500">Live buying intent from Discord & Slack</p>
             </div>
           </div>
-
           <div className="hidden md:flex items-center gap-2 flex-1 max-w-md mx-4">
             <input
               type="text"
@@ -185,85 +232,47 @@ export function Dashboard() {
               disabled={scraping}
               className={clsx(
                 "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition",
-                scraping
-                  ? "bg-slate-700 text-slate-400 cursor-not-allowed"
-                  : "bg-accent-intent/20 text-accent-intent hover:bg-accent-intent/30"
+                scraping ? "bg-slate-700 text-slate-400" : "bg-accent-intent/20 text-accent-intent hover:bg-accent-intent/30"
               )}
             >
-              <RefreshCw
-                className={clsx("w-4 h-4", scraping && "animate-spin")}
-              />
+              <RefreshCw className={clsx("w-4 h-4", scraping && "animate-spin")} />
               {scraping ? "Scanning..." : "Discover"}
             </button>
           </div>
-
           <div className="flex items-center gap-2 text-xs">
-            {config.apify && (
-              <span className="px-2 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/20">
-                Apify
-              </span>
-            )}
             {config.apollo && (
-              <span className="px-2 py-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                Apollo
-              </span>
+              <span className="px-2 py-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">Apollo</span>
             )}
-            {config.openai && (
-              <span className="px-2 py-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                AI
-              </span>
-            )}
-            {!config.apify && (
-              <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 hidden sm:inline">
-                Add APIFY_API_KEY
-              </span>
+            {config.apify && (
+              <span className="px-2 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/20">Apify</span>
             )}
           </div>
         </div>
       </header>
 
-      <main className="max-w-[1600px] mx-auto px-4 py-4 space-y-4">
+      <main className="max-w-[1800px] mx-auto px-4 py-4 space-y-4">
         {error && (
-          <div className="glass rounded-lg px-4 py-3 flex items-start gap-2 text-sm text-red-300/90">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <div>
-              <p>{error}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="mt-2 text-xs underline text-red-200 hover:text-white"
-              >
-                Reload page
-              </button>
-            </div>
+          <div className="glass rounded-lg px-4 py-3 text-sm text-red-300/90 flex gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" /> {error}
           </div>
         )}
-
         {warnings.length > 0 && (
-          <div className="glass rounded-lg px-4 py-3 flex items-start gap-2 text-sm text-amber-300/90">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <ul className="space-y-1">
-              {warnings.map((w, i) => (
-                <li key={i}>{w}</li>
-              ))}
-            </ul>
+          <div className="glass rounded-lg px-4 py-3 text-sm text-amber-300/90">
+            {warnings.map((w, i) => <p key={i}>{w}</p>)}
           </div>
         )}
 
         <StatsBar stats={stats} />
 
-        <IntentExplainer />
-
         {loading ? (
           <div className="flex items-center justify-center h-96 text-slate-500">
-            <RefreshCw className="w-6 h-6 animate-spin mr-2" />
-            Loading intent map...
+            <RefreshCw className="w-6 h-6 animate-spin mr-2" /> Loading leads map...
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-220px)] min-h-[600px]">
-            {/* Community list */}
-            <div className="lg:col-span-3 h-full min-h-[300px]">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-200px)] min-h-[640px]">
+            <div className="lg:col-span-3 h-full min-h-[300px] hidden lg:block">
               <CommunityList
-                communities={filteredForMap}
+                communities={mapFiltered}
                 selectedId={selected?.id}
                 onSelect={setSelected}
                 search={search}
@@ -275,88 +284,66 @@ export function Dashboard() {
               />
             </div>
 
-            {/* Map */}
-            <div className="lg:col-span-6 glass rounded-xl overflow-hidden flex flex-col">
-              <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 text-sm text-slate-400">
-                {mapView === "world" ? (
-                  <Globe className="w-4 h-4" />
-                ) : (
-                  <Map className="w-4 h-4" />
-                )}
-                <span>{mapView === "world" ? "World Map" : "Intent Landscape"}</span>
-
-                <div className="ml-3 flex rounded-lg border border-white/10 overflow-hidden text-xs">
-                  <button
-                    onClick={() => setMapView("world")}
-                    className={clsx(
-                      "px-3 py-1 flex items-center gap-1 transition",
-                      mapView === "world"
-                        ? "bg-accent-intent/20 text-accent-intent"
-                        : "text-slate-500 hover:text-slate-300"
-                    )}
-                  >
-                    <Globe className="w-3 h-3" />
-                    World
-                  </button>
-                  <button
-                    onClick={() => setMapView("intent")}
-                    className={clsx(
-                      "px-3 py-1 flex items-center gap-1 transition",
-                      mapView === "intent"
-                        ? "bg-accent-intent/20 text-accent-intent"
-                        : "text-slate-500 hover:text-slate-300"
-                    )}
-                  >
-                    <Map className="w-3 h-3" />
-                    Intent
-                  </button>
-                </div>
-
-                <span className="text-xs text-slate-600 ml-auto flex items-center gap-1">
-                  <Zap className="w-3 h-3" />
-                  {filteredForMap.length} communities
-                  {mapView === "world" && " · click pin to open"}
-                </span>
+            <div className="lg:col-span-6 h-full min-h-[500px] flex flex-col">
+              <div className="flex items-center gap-2 mb-2 text-xs text-slate-500">
+                <button
+                  onClick={() => setMapView("leads")}
+                  className={clsx("px-2 py-1 rounded flex items-center gap-1", mapView === "leads" ? "bg-white/10 text-white" : "hover:text-white")}
+                >
+                  <MapPin className="w-3 h-3" /> Leads Map
+                </button>
+                <button
+                  onClick={() => setMapView("world")}
+                  className={clsx("px-2 py-1 rounded flex items-center gap-1", mapView === "world" ? "bg-white/10 text-white" : "hover:text-white")}
+                >
+                  <Globe className="w-3 h-3" /> World
+                </button>
+                <button
+                  onClick={() => setMapView("intent")}
+                  className={clsx("px-2 py-1 rounded flex items-center gap-1", mapView === "intent" ? "bg-white/10 text-white" : "hover:text-white")}
+                >
+                  <Map className="w-3 h-3" /> Intent
+                </button>
               </div>
-              <div className="flex-1 p-2">
-                {mapView === "world" ? (
-                  <WorldMap
-                    communities={filteredForMap}
+              <div className="flex-1 min-h-0">
+                {mapView === "leads" ? (
+                  <LeadsMap
+                    communities={mapFiltered}
                     selectedId={selected?.id}
                     onSelect={setSelected}
+                    regionFilter={regionFilter}
+                    onRegionFilterChange={setRegionFilter}
+                    minIntent={minIntent}
+                    maxIntent={maxIntent}
+                    onMinIntentChange={setMinIntent}
+                    onMaxIntentChange={setMaxIntent}
+                    apolloConfigured={config.apollo}
+                    enrichedLeads={enrichedLeads}
+                    onBulkEnrich={handleBulkEnrich}
+                    bulkEnriching={bulkEnriching}
                   />
+                ) : mapView === "world" ? (
+                  <WorldMap communities={mapFiltered} selectedId={selected?.id} onSelect={setSelected} />
                 ) : (
-                  <IntentMap
-                    communities={filteredForMap}
-                    selectedId={selected?.id}
-                    onSelect={setSelected}
-                  />
+                  <div className="glass rounded-xl h-full p-2">
+                    <IntentMap communities={mapFiltered} selectedId={selected?.id} onSelect={setSelected} />
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Detail panel */}
             <div className="lg:col-span-3 h-full min-h-[300px]">
               <CommunityPanel
                 community={selected}
                 onClose={() => setSelected(null)}
                 apolloConfigured={config.apollo}
+                prefilledEnrichment={selectedEnrichment}
               />
             </div>
           </div>
         )}
 
-        {/* Mobile discover button */}
-        <div className="md:hidden fixed bottom-4 right-4 left-4">
-          <button
-            onClick={handleScrape}
-            disabled={scraping}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-accent-intent text-surface font-semibold shadow-lg"
-          >
-            <RefreshCw className={clsx("w-5 h-5", scraping && "animate-spin")} />
-            {scraping ? "Scanning communities..." : "Discover Communities"}
-          </button>
-        </div>
+        <IntentExplainer />
       </main>
     </div>
   );
