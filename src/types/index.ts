@@ -66,3 +66,45 @@ export interface MapStats {
   slack: number;
   avgIntent: number;
 }
+
+export type MemberFetchSource = "widget" | "bot" | "slack_api";
+
+export interface ApolloPerson {
+  id?: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  title?: string;
+  email?: string;
+  linkedinUrl?: string;
+  organizationName?: string;
+  organizationDomain?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
+export interface CommunityMember {
+  id: string;
+  communityId: string;
+  platform: Platform;
+  platformUserId: string;
+  username: string;
+  displayName?: string;
+  avatarUrl?: string;
+  status?: string;
+  activity?: string;
+  role?: string;
+  source: MemberFetchSource;
+  apolloData?: ApolloPerson;
+  enrichedAt?: string;
+  fetchedAt: string;
+}
+
+export interface MemberFetchResult {
+  communityId: string;
+  fetched: number;
+  source: MemberFetchSource;
+  limitation?: string;
+  guildId?: string;
+}

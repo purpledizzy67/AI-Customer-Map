@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import type { Community } from "@/types";
+import { useState, useEffect, useCallback } from "react";
+import type { Community, CommunityMember } from "@/types";
 import type { ApolloEnrichmentResult } from "@/lib/apollo";
 import type { EnrichedLead } from "@/lib/export-leads";
+import { downloadMembersCsv } from "@/lib/export-members";
 import clsx from "clsx";
 import {
   ExternalLink,
@@ -15,6 +16,10 @@ import {
   Building2,
   Globe,
   Loader2,
+  Download,
+  RefreshCw,
+  UserCircle,
+  AlertCircle,
 } from "lucide-react";
 
 interface CommunityPanelProps {
@@ -51,11 +56,37 @@ export function CommunityPanel({
   const [enriching, setEnriching] = useState(false);
   const [manualDomain, setManualDomain] = useState("");
   const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"overview" | "members">("overview");
+  const [members, setMembers] = useState<CommunityMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [fetchingMembers, setFetchingMembers] = useState(false);
+  const [enrichingMembers, setEnrichingMembers] = useState(false);
+  const [memberError, setMemberError] = useState<string | null>(null);
+  const [memberNote, setMemberNote] = useState<string | null>(null);
+  const [memberDomain, setMemberDomain] = useState("");
+
+  const loadMembers = useCallback(async (communityId: string) => {
+    setMembersLoading(true);
+    try {
+      const res = await fetch(`/api/members?communityId=${encodeURIComponent(communityId)}`);
+      const data = await res.json();
+      if (data.success) setMembers(data.members ?? []);
+    } catch {
+      /* ignore */
+    } finally {
+      setMembersLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     setEnrichment(null);
     setEnrichError(null);
     setManualDomain("");
+    setMemberError(null);
+    setMemberNote(null);
+    setMemberDomain("");
+    setActiveTab("overview");
+    setMembers([]);
     if (prefilledEnrichment?.organization && community) {
       setEnrichment({
         communityId: community.id,
@@ -64,7 +95,67 @@ export function CommunityPanel({
         enrichedAt: new Date().toISOString(),
       });
     }
-  }, [community?.id, prefilledEnrichment]);
+    if (community?.id) {
+      loadMembers(community.id);
+    }
+  }, [community?.id, prefilledEnrichment, loadMembers]);
+
+  const handleFetchMembers = async () => {
+    if (!community) return;
+    setFetchingMembers(true);
+    setMemberError(null);
+    setMemberNote(null);
+    try {
+      const res = await fetch("/api/members/fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ communityId: community.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? "Failed to fetch members");
+      }
+      setMembers(data.members ?? []);
+      if (data.limitation) setMemberNote(data.limitation);
+    } catch (err) {
+      setMemberError(err instanceof Error ? err.message : "Fetch failed");
+    } finally {
+      setFetchingMembers(false);
+    }
+  };
+
+  const handleEnrichMembers = async () => {
+    if (!community) return;
+    setEnrichingMembers(true);
+    setMemberError(null);
+    try {
+      const res = await fetch("/api/members/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          communityId: community.id,
+          domain: memberDomain || undefined,
+          limit: 10,
+        }),
+      });
+      const data = await res.json();
+      if (data.planBlocked) {
+        setMemberNote(data.error);
+      } else if (!res.ok || !data.success) {
+        throw new Error(data.error ?? "Member enrichment failed");
+      } else {
+        if (data.planNote) setMemberNote(data.planNote);
+        else if (data.enriched > 0) {
+          setMemberNote(`Enriched ${data.enriched} of ${data.attempted} members via Apollo.`);
+        }
+      }
+      await loadMembers(community.id);
+    } catch (err) {
+      setMemberError(err instanceof Error ? err.message : "Enrichment failed");
+    } finally {
+      setEnrichingMembers(false);
+    }
+  };
 
   const handleEnrich = async (domain?: string) => {
     if (!community) return;
@@ -139,7 +230,26 @@ export function CommunityPanel({
         </button>
       </div>
 
+      <div className="flex border-b border-white/10">
+        {(["overview", "members"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={clsx(
+              "flex-1 py-2.5 text-xs font-medium uppercase tracking-wide transition",
+              activeTab === tab
+                ? "text-white border-b-2 border-accent-intent"
+                : "text-slate-500 hover:text-slate-300"
+            )}
+          >
+            {tab === "overview" ? "Overview" : `Members${members.length ? ` (${members.length})` : ""}`}
+          </button>
+        ))}
+      </div>
+
       <div className="p-4 flex-1 overflow-y-auto space-y-4">
+        {activeTab === "overview" ? (
+          <>
         <div className="flex items-center gap-4 text-sm text-slate-400 flex-wrap">
           <span className="flex items-center gap-1">
             <Users className="w-4 h-4" />
@@ -345,6 +455,147 @@ export function CommunityPanel({
           <p className="text-xs text-slate-500">
             {[community.region, community.language].filter(Boolean).join(" · ")}
           </p>
+        )}
+          </>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs text-slate-500">
+                Fetch individual members, then enrich via Apollo (paid plan) or export CSV.
+              </p>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={handleFetchMembers}
+                  disabled={fetchingMembers || !community.inviteUrl}
+                  className="text-xs px-2.5 py-1 rounded-md bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 transition disabled:opacity-50 flex items-center gap-1"
+                >
+                  {fetchingMembers ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3 h-3" />
+                  )}
+                  Fetch
+                </button>
+                {members.length > 0 && (
+                  <button
+                    onClick={() => downloadMembersCsv(members, community.name)}
+                    className="text-xs px-2.5 py-1 rounded-md border border-white/10 text-slate-400 hover:text-white flex items-center gap-1"
+                  >
+                    <Download className="w-3 h-3" />
+                    CSV
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {apolloConfigured && members.length > 0 && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={memberDomain}
+                  onChange={(e) => setMemberDomain(e.target.value)}
+                  placeholder="company.com for Apollo match"
+                  className="flex-1 text-xs px-2 py-1.5 bg-surface/50 border border-white/10 rounded-md text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/50"
+                />
+                <button
+                  onClick={handleEnrichMembers}
+                  disabled={enrichingMembers}
+                  className="text-xs px-2.5 py-1.5 rounded-md bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition disabled:opacity-50 flex items-center gap-1"
+                >
+                  {enrichingMembers ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3 h-3" />
+                  )}
+                  Enrich 10
+                </button>
+              </div>
+            )}
+
+            {memberError && (
+              <p className="text-xs text-red-400 flex items-start gap-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                {memberError}
+              </p>
+            )}
+
+            {memberNote && (
+              <p className="text-xs text-amber-400/90 flex items-start gap-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                {memberNote}
+              </p>
+            )}
+
+            {!community.inviteUrl && (
+              <p className="text-xs text-slate-500">No invite URL available for this community.</p>
+            )}
+
+            {membersLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+              </div>
+            ) : members.length === 0 ? (
+              <div className="text-center py-8 text-slate-500 text-sm">
+                <UserCircle className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                <p>No members fetched yet.</p>
+                <p className="text-xs mt-1 text-slate-600">
+                  Discord: widget shows online members. Add DISCORD_BOT_TOKEN for full roster.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">
+                {members.map((member) => (
+                  <div
+                    key={member.id}
+                    className="flex items-center gap-2 p-2 rounded-lg bg-surface/40 border border-white/5"
+                  >
+                    {member.avatarUrl ? (
+                      <img
+                        src={member.avatarUrl}
+                        alt=""
+                        className="w-8 h-8 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
+                        <UserCircle className="w-5 h-5 text-slate-500" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-white truncate">
+                        {member.displayName ?? member.username}
+                      </div>
+                      <div className="text-[10px] text-slate-500 flex gap-2">
+                        {member.status && (
+                          <span className="capitalize">{member.status}</span>
+                        )}
+                        {member.activity && <span>{member.activity}</span>}
+                        {member.role && <span>{member.role}</span>}
+                      </div>
+                      {member.apolloData && (
+                        <div className="text-[10px] text-purple-300 truncate mt-0.5">
+                          {member.apolloData.title && `${member.apolloData.title} · `}
+                          {member.apolloData.organizationName ?? member.apolloData.name}
+                          {member.apolloData.linkedinUrl && (
+                            <a
+                              href={member.apolloData.linkedinUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-1 inline-flex items-center gap-0.5 hover:text-purple-200"
+                            >
+                              LinkedIn <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {member.apolloData && (
+                      <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 

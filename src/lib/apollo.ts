@@ -185,3 +185,147 @@ export async function enrichCommunityLeads(input: {
 export function isApolloConfigured(): boolean {
   return Boolean(process.env.APOLLO_API_KEY);
 }
+
+export type { ApolloPerson } from "@/types";
+
+interface ApolloPersonResponse {
+  person?: {
+    id?: string;
+    first_name?: string;
+    last_name?: string;
+    name?: string;
+    title?: string;
+    email?: string;
+    linkedin_url?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    organization?: {
+      name?: string;
+      primary_domain?: string;
+    };
+  };
+  error?: string;
+  error_code?: string;
+}
+
+interface ApolloBulkPersonResponse {
+  matches?: Array<{
+    person?: ApolloPersonResponse["person"];
+  }>;
+  error?: string;
+  error_code?: string;
+}
+
+function normalizePerson(
+  person: NonNullable<ApolloPersonResponse["person"]>
+): import("@/types").ApolloPerson {
+  return {
+    id: person.id,
+    firstName: person.first_name,
+    lastName: person.last_name,
+    name: person.name,
+    title: person.title,
+    email: person.email,
+    linkedinUrl: person.linkedin_url,
+    city: person.city,
+    state: person.state,
+    country: person.country,
+    organizationName: person.organization?.name,
+    organizationDomain: person.organization?.primary_domain,
+  };
+}
+
+export async function enrichPersonByName(
+  firstName: string,
+  lastName: string,
+  domain: string,
+  apiKey: string
+): Promise<{ person: import("@/types").ApolloPerson | null; planBlocked?: boolean }> {
+  const params = new URLSearchParams({
+    first_name: firstName,
+    last_name: lastName,
+    domain,
+  });
+
+  const res = await fetch(`${APOLLO_BASE}/people/match?${params}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+      "X-Api-Key": apiKey,
+    },
+    next: { revalidate: 0 },
+  });
+
+  const data = (await res.json()) as ApolloPersonResponse;
+
+  if (data.error_code === "API_INACCESSIBLE") {
+    return { person: null, planBlocked: true };
+  }
+
+  if (!res.ok || !data.person?.id) {
+    return { person: null };
+  }
+
+  return { person: normalizePerson(data.person) };
+}
+
+export async function enrichPeopleBulk(
+  inputs: Array<{ firstName: string; lastName: string; domain: string }>,
+  apiKey: string
+): Promise<{
+  results: Array<import("@/types").ApolloPerson | null>;
+  planBlocked?: boolean;
+}> {
+  if (inputs.length === 0) return { results: [] };
+
+  const res = await fetch(`${APOLLO_BASE}/people/bulk_match`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+      "X-Api-Key": apiKey,
+    },
+    body: JSON.stringify({
+      details: inputs.map((i) => ({
+        first_name: i.firstName,
+        last_name: i.lastName,
+        domain: i.domain,
+      })),
+    }),
+    next: { revalidate: 0 },
+  });
+
+  const data = (await res.json()) as ApolloBulkPersonResponse;
+
+  if (data.error_code === "API_INACCESSIBLE") {
+    return { results: inputs.map(() => null), planBlocked: true };
+  }
+
+  if (!res.ok) {
+    return { results: inputs.map(() => null) };
+  }
+
+  const results = (data.matches ?? []).map((match) =>
+    match.person?.id ? normalizePerson(match.person) : null
+  );
+
+  return { results };
+}
+
+/** Split a display name into first/last for Apollo lookup */
+export function splitDisplayName(name: string): {
+  firstName: string;
+  lastName: string;
+} {
+  const cleaned = name.replace(/#\d+$/, "").trim();
+  const parts = cleaned.split(/\s+/);
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: parts[0] };
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(" "),
+  };
+}

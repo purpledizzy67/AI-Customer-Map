@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
-import type { Community, IntentSignal, ScrapeJob } from "@/types";
+import type { Community, CommunityMember, IntentSignal, ScrapeJob } from "@/types";
 
 const dbPath =
   process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "intentmap.db");
@@ -58,6 +58,27 @@ function ensureDb(): Database.Database {
       started_at TEXT NOT NULL,
       completed_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS community_members (
+      id TEXT PRIMARY KEY,
+      community_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      platform_user_id TEXT NOT NULL,
+      username TEXT NOT NULL,
+      display_name TEXT,
+      avatar_url TEXT,
+      status TEXT,
+      activity TEXT,
+      role TEXT,
+      source TEXT NOT NULL,
+      apollo_data TEXT,
+      enriched_at TEXT,
+      fetched_at TEXT NOT NULL,
+      FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_members_community ON community_members(community_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_members_platform_user ON community_members(community_id, platform_user_id);
   `);
 
   // Migrate existing databases
@@ -389,6 +410,146 @@ export function generateCommunityId(
     .replace(/[^a-zA-Z0-9]/g, "-")
     .slice(0, 80);
   return `${platform}-${slug}`;
+}
+
+function rowToMember(row: Record<string, unknown>): CommunityMember {
+  return {
+    id: row.id as string,
+    communityId: row.community_id as string,
+    platform: row.platform as CommunityMember["platform"],
+    platformUserId: row.platform_user_id as string,
+    username: row.username as string,
+    displayName: row.display_name as string | undefined,
+    avatarUrl: row.avatar_url as string | undefined,
+    status: row.status as string | undefined,
+    activity: row.activity as string | undefined,
+    role: row.role as string | undefined,
+    source: row.source as CommunityMember["source"],
+    apolloData: row.apollo_data
+      ? JSON.parse(row.apollo_data as string)
+      : undefined,
+    enrichedAt: row.enriched_at as string | undefined,
+    fetchedAt: row.fetched_at as string,
+  };
+}
+
+function memberToParams(member: CommunityMember) {
+  return {
+    id: member.id,
+    communityId: member.communityId,
+    platform: member.platform,
+    platformUserId: member.platformUserId,
+    username: member.username,
+    displayName: member.displayName ?? null,
+    avatarUrl: member.avatarUrl ?? null,
+    status: member.status ?? null,
+    activity: member.activity ?? null,
+    role: member.role ?? null,
+    source: member.source,
+    apolloData: member.apolloData ? JSON.stringify(member.apolloData) : null,
+    enrichedAt: member.enrichedAt ?? null,
+    fetchedAt: member.fetchedAt,
+  };
+}
+
+export function upsertMembers(members: CommunityMember[]): number {
+  const database = ensureDb();
+  const stmt = database.prepare(
+    `INSERT INTO community_members (
+      id, community_id, platform, platform_user_id, username, display_name,
+      avatar_url, status, activity, role, source, apollo_data, enriched_at, fetched_at
+    ) VALUES (
+      @id, @communityId, @platform, @platformUserId, @username, @displayName,
+      @avatarUrl, @status, @activity, @role, @source, @apolloData, @enrichedAt, @fetchedAt
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      username = excluded.username,
+      display_name = excluded.display_name,
+      avatar_url = excluded.avatar_url,
+      status = excluded.status,
+      activity = excluded.activity,
+      role = excluded.role,
+      source = excluded.source,
+      fetched_at = excluded.fetched_at`
+  );
+
+  const tx = database.transaction((items: CommunityMember[]) => {
+    for (const m of items) {
+      stmt.run(memberToParams(m));
+    }
+  });
+  tx(members);
+  return members.length;
+}
+
+export function updateMemberEnrichment(
+  memberId: string,
+  apolloData: CommunityMember["apolloData"]
+): void {
+  const database = ensureDb();
+  database
+    .prepare(
+      `UPDATE community_members
+       SET apollo_data = @apolloData, enriched_at = @enrichedAt
+       WHERE id = @id`
+    )
+    .run({
+      id: memberId,
+      apolloData: apolloData ? JSON.stringify(apolloData) : null,
+      enrichedAt: new Date().toISOString(),
+    });
+}
+
+export function getMembersByCommunity(
+  communityId: string,
+  limit = 500
+): CommunityMember[] {
+  const database = ensureDb();
+  const rows = database
+    .prepare(
+      `SELECT * FROM community_members
+       WHERE community_id = ?
+       ORDER BY CASE WHEN enriched_at IS NULL THEN 1 ELSE 0 END, enriched_at DESC, display_name ASC
+       LIMIT ?`
+    )
+    .all(communityId, limit) as Record<string, unknown>[];
+
+  return rows.map(rowToMember);
+}
+
+export function getMemberById(id: string): CommunityMember | null {
+  const database = ensureDb();
+  const row = database
+    .prepare("SELECT * FROM community_members WHERE id = ?")
+    .get(id) as Record<string, unknown> | undefined;
+  return row ? rowToMember(row) : null;
+}
+
+export function getUnenrichedMembers(
+  communityId: string,
+  limit = 30
+): CommunityMember[] {
+  const database = ensureDb();
+  const rows = database
+    .prepare(
+      `SELECT * FROM community_members
+       WHERE community_id = ? AND apollo_data IS NULL
+       ORDER BY fetched_at DESC
+       LIMIT ?`
+    )
+    .all(communityId, limit) as Record<string, unknown>[];
+
+  return rows.map(rowToMember);
+}
+
+export function memberCountByCommunity(communityId: string): number {
+  const database = ensureDb();
+  const row = database
+    .prepare(
+      "SELECT COUNT(*) as count FROM community_members WHERE community_id = ?"
+    )
+    .get(communityId) as { count: number };
+  return row.count;
 }
 
 export type { IntentSignal };
