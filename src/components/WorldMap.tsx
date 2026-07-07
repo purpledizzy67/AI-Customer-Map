@@ -166,7 +166,7 @@ export function WorldMap({ communities, selectedId, onSelect }: WorldMapProps) {
 
     pinGroups
       .on("mouseenter", function (event, d) {
-        d3.select(this).select("circle").attr("fill-opacity", 1);
+        d3.select(this).select(".pin-body").attr("fill-opacity", 1);
         const rect = containerRef.current?.getBoundingClientRect();
         if (rect) {
           setTooltip({
@@ -178,7 +178,7 @@ export function WorldMap({ communities, selectedId, onSelect }: WorldMapProps) {
       })
       .on("mouseleave", function (_, d) {
         d3.select(this)
-          .select("circle")
+          .select(".pin-body")
           .attr("fill-opacity", d.community.id === selectedId ? 0.95 : 0.75);
         setTooltip(null);
       })
