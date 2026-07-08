@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0a0e14;
+  --foreground: #e8edf4;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-surface-raised/80 backdrop-blur-md border border-white/10;
+  }
+
+  .intent-hot {
+    @apply text-orange-400;
+  }
+
+  .intent-warm {
+    @apply text-amber-300;
+  }
+
+  .intent-cool {
+    @apply text-cyan-300;
+  }
+
+  .intent-cold {
+    @apply text-slate-400;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
