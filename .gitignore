@@ -38,6 +38,10 @@ yarn-error.log*
 *.db-shm
 *.db-wal
 
+# generated project artifacts (keep folder)
+/projects/*
+!/projects/.gitkeep
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

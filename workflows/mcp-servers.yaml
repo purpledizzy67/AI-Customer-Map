@@ -1,0 +1,25 @@
+# MCP server mapping for Cursor (documentation)
+# Use Cursor Settings → MCP to register HTTP tools that call this app.
+
+servers:
+  - name: work-assistant
+    description: Proactive AI Work Assistant APIs
+    tools:
+      - name: collect_context
+        method: POST
+        path: /api/collect
+      - name: analyze_priorities
+        method: POST
+        path: /api/analyze
+      - name: ask_assistant
+        method: POST
+        path: /api/chat
+      - name: semantic_search
+        method: GET
+        path: /api/search
+      - name: list_actions
+        method: GET
+        path: /api/approvals
+      - name: approve_action
+        method: POST
+        path: /api/approvals
