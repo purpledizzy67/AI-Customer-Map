@@ -1,0 +1,46 @@
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - DEMO_MODE=${DEMO_MODE:-true}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-docker-dev-encryption-key-change-me}
+    volumes:
+      - ./projects:/app/projects
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: deps
+    working_dir: /app
+    command: npx tsx scripts/worker.ts
+    env_file:
+      - .env
+    environment:
+      - DEMO_MODE=${DEMO_MODE:-true}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-docker-dev-encryption-key-change-me}
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  # Optional: point N8N_WEBHOOK_* at n8n and use workflows/n8n/*.json
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+    volumes:
+      - n8n_data:/home/node/.n8n
+    profiles: ["n8n"]
+
+volumes:
+  n8n_data:

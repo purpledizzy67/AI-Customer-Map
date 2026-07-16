@@ -1,0 +1,61 @@
+{
+  "name": "Proactive AI — Morning & Evening",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 8 * * *" }]
+        }
+      },
+      "name": "08:00 Morning",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_URL}}/api/webhooks/n8n",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"workflow\": \"morning\" }"
+      },
+      "name": "Morning dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 0]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 18 * * *" }]
+        }
+      },
+      "name": "18:00 Evening",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_URL}}/api/webhooks/n8n",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"workflow\": \"evening\" }"
+      },
+      "name": "Evening summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 220]
+    }
+  ],
+  "connections": {
+    "08:00 Morning": {
+      "main": [[{ "node": "Morning dashboard", "type": "main", "index": 0 }]]
+    },
+    "18:00 Evening": {
+      "main": [[{ "node": "Evening summary", "type": "main", "index": 0 }]]
+    }
+  }
+}

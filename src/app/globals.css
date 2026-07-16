@@ -3,47 +3,54 @@
 @tailwind utilities;
 
 :root {
-  --background: #0a0e14;
-  --foreground: #e8edf4;
+  --bg: #0b0f14;
+  --bg-raised: #121821;
+  --ink: #e8eef6;
+  --ink-muted: #8b9bb0;
+  --brand: #3d9cf0;
+  --grid: rgba(61, 156, 240, 0.06);
+}
+
+html,
+body {
+  min-height: 100%;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(61, 156, 240, 0.14), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(52, 211, 153, 0.08), transparent 50%),
+    linear-gradient(180deg, #0b0f14 0%, #0d1219 40%, #0b0f14 100%);
+  background-attachment: fixed;
+}
+
+/* Subtle grid atmosphere */
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at center, black 20%, transparent 75%);
+  opacity: 0.7;
+  z-index: 0;
+}
+
+#__next,
+body > div {
+  position: relative;
+  z-index: 1;
 }
 
 @layer utilities {
-  .glass {
-    @apply bg-surface-raised/80 backdrop-blur-md border border-white/10;
+  .panel {
+    @apply rounded-xl border border-canvas-border/80 bg-canvas-raised/80 shadow-panel backdrop-blur-sm;
   }
-
-  .intent-hot {
-    @apply text-orange-400;
+  .label {
+    @apply text-xs uppercase tracking-[0.14em] text-ink-faint;
   }
-
-  .intent-warm {
-    @apply text-amber-300;
-  }
-
-  .intent-cool {
-    @apply text-cyan-300;
-  }
-
-  .intent-cold {
-    @apply text-slate-400;
-  }
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 3px;
 }

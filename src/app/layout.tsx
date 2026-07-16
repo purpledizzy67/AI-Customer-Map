@@ -1,34 +1,38 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { AppShell } from "@/components/layout/AppShell";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const display = Fraunces({
   subsets: ["latin"],
+  variable: "--font-display",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const sans = DM_Sans({
   subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
 });
 
 export const metadata: Metadata = {
-  title: "AI Customer Map — Live Customer Intent from Discord & Slack",
+  title: "Proactive AI Work Assistant",
   description:
-    "AI Customer Map discovers public Discord and Slack communities with high buying intent. Map, score, and reach potential customers faster.",
+    "Monitor connected work apps, understand priorities from real activity, and prepare work before you ask.",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
+        className={`${display.variable} ${sans.variable} ${mono.variable} font-sans antialiased`}
       >
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
